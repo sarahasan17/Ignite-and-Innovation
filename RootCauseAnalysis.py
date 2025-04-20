@@ -3,20 +3,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report, confusion_matrix
 
 from xgboost import XGBClassifier
+from scipy.stats import uniform, randint
 
 # Load dataset
-df = pd.read_excel("Final_Incident_Report_With_Application_IDs.xlsx")
+df = pd.read_excel("C:/Users/K139221/Downloads/incident.xlsx")
 
 # Filter relevant tickets
-train_df = df[(df["state"] == "Resolved") & (df["Cause"] != "Cause Undetermined")].copy()
+train_df = df[(df["State"] == "Resolved") & (df["Cause"] != "Cause Undetermined")].copy()
 
 # Combine text fields
 train_df["full_text"] = (
@@ -29,6 +30,10 @@ train_df["full_text"] = (
 cause_counts = train_df['Cause'].value_counts()
 rare_causes = cause_counts[cause_counts < 100].index
 train_df['Cause'] = train_df['Cause'].apply(lambda x: 'Other' if x in rare_causes else x)
+
+# Label encode target
+label_encoder = LabelEncoder()
+train_df['Cause_encoded'] = label_encoder.fit_transform(train_df['Cause'])
 
 # Extract temporal features
 train_df['Opened'] = pd.to_datetime(train_df['Opened'])
@@ -46,7 +51,7 @@ train_df['TimeBucket'] = pd.cut(
 # Feature sets
 x_text = train_df["full_text"]
 x_categorical = train_df[['Priority', 'Assignment group', 'Configuration item', 'Month', 'DayOfWeek', 'Hour', 'isWeekend', 'Quarter', 'TimeBucket']]
-y = train_df["Cause"]
+y = train_df["Cause_encoded"]
 
 # Train-test split
 x_text_train, x_text_test, x_categorical_train, x_categorical_test, y_train, y_test = train_test_split(
@@ -75,32 +80,46 @@ pipeline = Pipeline(steps=[
     ('classifier', XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42))
 ])
 
-# Hyperparameter tuning
-param_grid = {
-    'classifier__n_estimators': [100, 200],
-    'classifier__max_depth': [3, 5],
-    'classifier__learning_rate': [0.1, 0.3]
+# Hyperparameter tuning with RandomizedSearchCV
+param_dist = {
+    'classifier__n_estimators': randint(100, 300),
+    'classifier__max_depth': randint(3, 10),
+    'classifier__learning_rate': uniform(0.05, 0.3),
+    'classifier__subsample': uniform(0.5, 0.5),
+    'classifier__colsample_bytree': uniform(0.5, 0.5),
+    'classifier__gamma': uniform(0, 0.5),
+    'classifier__min_child_weight': randint(1, 6)
 }
 
-grid_search = GridSearchCV(pipeline, param_grid, cv=3, scoring='f1_weighted', verbose=2, n_jobs=-1)
-grid_search.fit(x_train, y_train)
+random_search = RandomizedSearchCV(
+    pipeline,
+    param_distributions=param_dist,
+    n_iter=25,
+    cv=3,
+    scoring='f1_weighted',
+    verbose=2,
+    random_state=42,
+    n_jobs=-1
+)
 
-# Best estimator
-best_model = grid_search.best_estimator_
+random_search.fit(x_train, y_train)
+best_model = random_search.best_estimator_
 
 # Predictions
 y_pred = best_model.predict(x_test)
+y_pred_labels = label_encoder.inverse_transform(y_pred)
+y_test_labels = label_encoder.inverse_transform(y_test)
 
 # Evaluation report
 print("Classification Report:\n")
-print(classification_report(y_test, y_pred))
+print(classification_report(y_test_labels, y_pred_labels))
 
 # Confusion Matrix
-cm = confusion_matrix(y_test, y_pred, labels=best_model.classes_)
+cm = confusion_matrix(y_test_labels, y_pred_labels, labels=label_encoder.classes_)
 plt.figure(figsize=(12, 8))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-            xticklabels=best_model.classes_,
-            yticklabels=best_model.classes_)
+            xticklabels=label_encoder.classes_,
+            yticklabels=label_encoder.classes_)
 plt.title('Confusion Matrix')
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
