@@ -8,51 +8,43 @@ void testGetAllADUsers_successful() throws ApplicationException {
 
     List<LDAPUserInfoDto> mockUserList = List.of(mockUser1);
 
-    // Setup mocks
+    // Mock the behavior of the LdapTemplate and contextSource
     when(ldapTemplate.getContextSource()).thenReturn(contextSource);
     when(contextSource.getReadOnlyContext()).thenReturn(mock(LdapContext.class));
 
-    // Mock the behavior of SingleContextSource (where doWithSingleContext() is invoked)
+    // Mock the behavior of SingleContextSource's static method
     try (MockedStatic<SingleContextSource> contextSourceMock = mockStatic(SingleContextSource.class)) {
+        // Define the behavior of the static method `doWithSingleContext`
+        contextSourceMock.when(() -> 
+            SingleContextSource.doWithSingleContext(any(), any())
+        ).thenAnswer(invocation -> {
+            // Extract the passed lambda and invoke it manually with a mocked LdapContext
+            @SuppressWarnings("unchecked")
+            org.springframework.ldap.core.ContextExecutor<LdapContext> executor = 
+                (org.springframework.ldap.core.ContextExecutor<LdapContext>) invocation.getArgument(1);
+            // Simulate calling the lambda passed to doWithSingleContext
+            return executor.executeWithContext(mock(LdapContext.class));
+        });
 
-        // Mock search result behavior
+        // Simulate calling the search method inside the do-while loop
         LdapOperations ldapOperations = mock(LdapOperations.class);
         PagedResultsDirContextProcessor processor = mock(PagedResultsDirContextProcessor.class);
+        when(processor.hasMore()).thenReturn(true).thenReturn(false);  // Simulate paging behavior
 
-        // Simulate hasMore() returning true once, then false
-        when(processor.hasMore()).thenReturn(true).thenReturn(false);
-
-        // Simulate search call during the loop
         when(ldapOperations.search(
-                eq(LdapUtils.emptyLdapName()),
-                eq(searchFilter),
-                any(SearchControls.class),
-                any(PersonAttributesMapper.class),
+                eq(LdapUtils.emptyLdapName()), 
+                eq(searchFilter), 
+                any(SearchControls.class), 
+                any(PersonAttributesMapper.class), 
                 eq(processor)
         )).thenReturn(mockUserList);
 
-        // Mock doWithSingleContext to invoke the real method
-        contextSourceMock.when(() -> SingleContextSource.doWithSingleContext(any(), any()))
-                .thenAnswer(invocation -> {
-                    // Ensure that the passed lambda is executed
-                    @SuppressWarnings("unchecked")
-                    org.springframework.ldap.core.ContextExecutor<LdapContext> executor =
-                            (org.springframework.ldap.core.ContextExecutor<LdapContext>) invocation.getArgument(1);
-                    // Simulate execution of the passed lambda method
-                    return executor.executeWithContext(mock(LdapContext.class)); 
-                });
+        // Execute the service method
+        List<LDAPUserInfoDto> result = ldapGroupsService.getAllADUsers(searchFilter, pageSize);
 
-        // Inject the processor using reflection if needed
-        try (MockedStatic<PagedResultsDirContextProcessor> processorMock = mockStatic(PagedResultsDirContextProcessor.class)) {
-            processorMock.when(() -> new PagedResultsDirContextProcessor(pageSize)).thenReturn(processor);
-
-            // Execute
-            List<LDAPUserInfoDto> result = ldapGroupsService.getAllADUsers(searchFilter, pageSize);
-
-            // Assert
-            assertNotNull(result);
-            assertEquals(1, result.size());
-            assertEquals("user1", result.get(0).getEmpId());
-        }
+        // Assertions
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("user1", result.get(0).getEmpId());
     }
 }
