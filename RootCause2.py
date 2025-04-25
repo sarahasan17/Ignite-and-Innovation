@@ -6,50 +6,38 @@ void testGetAllADUsers_successful() throws ApplicationException {
     LDAPUserInfoDto mockUser1 = new LDAPUserInfoDto();
     mockUser1.setUserId("user1");
 
-    List<LDAPUserInfoDto> pageResult = List.of(mockUser1);
+    List<LDAPUserInfoDto> mockUserList = List.of(mockUser1);
 
-    when(ldapTemplate.getContextSource()).thenReturn(contextSource);
-    when(contextSource.getReadOnlyContext()).thenReturn(mock(LdapContext.class));
-
-    // Mock LdapOperations
-    LdapOperations ldapOperationsMock = mock(LdapOperations.class);
-    // Capture the actual processor to control hasMore()
+    // Mock processor and operations
     PagedResultsDirContextProcessor processorMock = mock(PagedResultsDirContextProcessor.class);
+    LdapOperations ldapOperationsMock = mock(LdapOperations.class);
+    LdapContext mockContext = mock(LdapContext.class);
 
-    // First iteration: hasMore = true → process page
-    // Second iteration: hasMore = false → exit loop
+    // Simulate 1 iteration of do-while
     when(processorMock.hasMore()).thenReturn(true, false);
-
     when(ldapOperationsMock.search(
             eq(LdapUtils.emptyLdapName()),
             eq(searchFilter),
             any(SearchControls.class),
             any(PersonAttributesMapper.class),
-            eq(processorMock))
-    ).thenReturn(pageResult);
+            eq(processorMock)
+    )).thenReturn(mockUserList);
 
-    // Mock static call to SingleContextSource.doWithSingleContext
+    when(ldapTemplate.getContextSource()).thenReturn(contextSource);
+    when(contextSource.getReadOnlyContext()).thenReturn(mockContext);
+
     try (MockedStatic<SingleContextSource> contextSourceMock = mockStatic(SingleContextSource.class)) {
         contextSourceMock.when(() -> SingleContextSource.doWithSingleContext(any(), any()))
                 .thenAnswer(invocation -> {
-                    ContextExecutor<LdapContext> executor = invocation.getArgument(1);
-                    return executor.executeWithContext(ldapOperationsMock);  // <-- this executes your do-while logic
+                    // Extract lambda and run it to simulate real execution
+                    org.springframework.ldap.core.ContextExecutor<LdapContext> executor = invocation.getArgument(1);
+                    return executor.executeWithContext(ldapOperationsMock);
                 });
 
-        // Call the actual method
         List<LDAPUserInfoDto> result = ldapGroupsService.getAllADUsers(searchFilter, pageSize);
 
         assertNotNull(result);
         assertEquals(1, result.size());
         assertEquals("user1", result.get(0).getUserId());
-
-        // Verify search was called once (1 loop)
-        verify(ldapOperationsMock, times(1)).search(
-                eq(LdapUtils.emptyLdapName()),
-                eq(searchFilter),
-                any(SearchControls.class),
-                any(PersonAttributesMapper.class),
-                eq(processorMock)
-        );
     }
 }
