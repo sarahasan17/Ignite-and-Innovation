@@ -1,4 +1,4 @@
- @Test
+  @Test
     void testGetAllADUsers_SuccessfulExecution() throws Exception {
         // Given
         String searchFilter = "(memberOf=CN=groupName,dc=example,dc=com)";
@@ -6,11 +6,7 @@
         List<LDAPUserInfoDto> expectedUsers = Arrays.asList(new LDAPUserInfoDto(), new LDAPUserInfoDto());
 
         // Mocking the LdapTemplate behavior
-        when(ldapTemplate.getContextSource()).thenReturn(mock(SingleContextSource.class));
-
-        // Mocking operations search inside the doWithSingleContext
-        when(ldapTemplate.getContextSource().getOperations()).thenReturn(mock(LdapTemplate.class));
-        when(ldapTemplate.getContextSource().getOperations().search(
+        when(ldapTemplate.search(
             any(), eq(searchFilter), any(SearchControls.class), any(), eq(processor)
         )).thenReturn(expectedUsers);
 
@@ -19,8 +15,9 @@
 
         // Then
         assertEquals(2, result.size());
-        verify(ldapTemplate, times(1)).getContextSource(); // Verify that the ldapTemplate's context was used
+        verify(ldapTemplate, times(1)).search(any(), eq(searchFilter), any(SearchControls.class), any(), eq(processor));
     }
+
 
     @Test
     void testGetAllADUsers_ExceptionHandling() throws Exception {
