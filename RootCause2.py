@@ -8,36 +8,65 @@ void testGetAllADUsers_successful() throws ApplicationException {
 
     List<LDAPUserInfoDto> mockUserList = List.of(mockUser1);
 
-    // Mock processor and operations
-    PagedResultsDirContextProcessor processorMock = mock(PagedResultsDirContextProcessor.class);
-    LdapOperations ldapOperationsMock = mock(LdapOperations.class);
-    LdapContext mockContext = mock(LdapContext.class);
-
-    // Simulate 1 iteration of do-while
-    when(processorMock.hasMore()).thenReturn(true, false);
-    when(ldapOperationsMock.search(
-            eq(LdapUtils.emptyLdapName()),
-            eq(searchFilter),
-            any(SearchControls.class),
-            any(PersonAttributesMapper.class),
-            eq(processorMock)
-    )).thenReturn(mockUserList);
-
+    // Setup mocks
     when(ldapTemplate.getContextSource()).thenReturn(contextSource);
-    when(contextSource.getReadOnlyContext()).thenReturn(mockContext);
+    when(contextSource.getReadOnlyContext()).thenReturn(mock(LdapContext.class));
 
+    // Use real processor behavior
     try (MockedStatic<SingleContextSource> contextSourceMock = mockStatic(SingleContextSource.class)) {
+
+        // Mock search result behavior
+        LdapOperations ldapOperations = mock(LdapOperations.class);
+        PagedResultsDirContextProcessor processor = mock(PagedResultsDirContextProcessor.class);
+
+        // Simulate hasMore() returning true once, then false
+        when(processor.hasMore()).thenReturn(true).thenReturn(false);
+
+        // Simulate search call during the loop
+        when(ldapOperations.search(
+                eq(LdapUtils.emptyLdapName()),
+                eq(searchFilter),
+                any(SearchControls.class),
+                any(PersonAttributesMapper.class),
+                eq(processor)
+        )).thenReturn(mockUserList);
+
         contextSourceMock.when(() -> SingleContextSource.doWithSingleContext(any(), any()))
                 .thenAnswer(invocation -> {
-                    // Extract lambda and run it to simulate real execution
-                    org.springframework.ldap.core.ContextExecutor<LdapContext> executor = invocation.getArgument(1);
-                    return executor.executeWithContext(ldapOperationsMock);
+                    @SuppressWarnings("unchecked")
+                    org.springframework.ldap.core.ContextExecutor<LdapContext> executor =
+                            (org.springframework.ldap.core.ContextExecutor<LdapContext>) invocation.getArgument(1);
+                    return executor.executeWithContext(mock(LdapContext.class)); // forces `do-while` to run
                 });
 
-        List<LDAPUserInfoDto> result = ldapGroupsService.getAllADUsers(searchFilter, pageSize);
+        // Inject the processor using reflection if needed
+        try (MockedStatic<PagedResultsDirContextProcessor> processorMock = mockStatic(PagedResultsDirContextProcessor.class)) {
+            processorMock.when(() -> new PagedResultsDirContextProcessor(pageSize)).thenReturn(processor);
 
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("user1", result.get(0).getUserId());
+            // Execute
+            List<LDAPUserInfoDto> result = ldapGroupsService.getAllADUsers(searchFilter, pageSize);
+
+            // Assert
+            assertNotNull(result);
+            assertEquals(1, result.size());
+            assertEquals("user1", result.get(0).getUserId());
+        }
+    }
+}
+
+
+
+
+
+package com.wellsfargo.mortgage.servicing.slr.exception;
+
+public class ApplicationException extends Exception {
+
+    public ApplicationException(String message) {
+        super(message);
+    }
+
+    public ApplicationException(String message, Throwable cause) {
+        super(message, cause);
     }
 }
