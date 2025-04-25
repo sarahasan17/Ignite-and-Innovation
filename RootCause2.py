@@ -1,50 +1,68 @@
-@Test
-void testGetAllADUsers_successful() throws ApplicationException {
-    String searchFilter = "(memberOf=CN=TestGroup,OU=Users,DC=example,DC=com)";
-    int pageSize = 2;
+ @Test
+    void testGetAllADUsers_SuccessfulExecution() throws Exception {
+        // Given
+        String searchFilter = "(memberOf=CN=groupName,dc=example,dc=com)";
+        int pageSize = 100;
+        List<LDAPUserInfoDto> expectedUsers = Arrays.asList(new LDAPUserInfoDto(), new LDAPUserInfoDto());
 
-    LDAPUserInfoDto mockUser1 = new LDAPUserInfoDto();
-    mockUser1.setEmpId("user1");
+        // Mocking the LdapTemplate behavior
+        when(ldapTemplate.getContextSource()).thenReturn(mock(SingleContextSource.class));
 
-    List<LDAPUserInfoDto> mockUserList = List.of(mockUser1);
+        // Mocking operations search inside the doWithSingleContext
+        when(ldapTemplate.getContextSource().getOperations()).thenReturn(mock(LdapTemplate.class));
+        when(ldapTemplate.getContextSource().getOperations().search(
+            any(), eq(searchFilter), any(SearchControls.class), any(), eq(processor)
+        )).thenReturn(expectedUsers);
 
-    // Mock the behavior of the LdapTemplate and contextSource
-    when(ldapTemplate.getContextSource()).thenReturn(contextSource);
-    when(contextSource.getReadOnlyContext()).thenReturn(mock(LdapContext.class));
+        // When
+        List<LDAPUserInfoDto> result = ldapGroupsServiceImpl.getAllADUsers(searchFilter, pageSize);
 
-    // Mock the behavior of SingleContextSource's static method
-    try (MockedStatic<SingleContextSource> contextSourceMock = mockStatic(SingleContextSource.class)) {
-        // Define the behavior of the static method `doWithSingleContext`
-        contextSourceMock.when(() -> 
-            SingleContextSource.doWithSingleContext(any(), any())
-        ).thenAnswer(invocation -> {
-            // Extract the passed lambda and invoke it manually with a mocked LdapContext
-            @SuppressWarnings("unchecked")
-            org.springframework.ldap.core.ContextExecutor<LdapContext> executor = 
-                (org.springframework.ldap.core.ContextExecutor<LdapContext>) invocation.getArgument(1);
-            // Simulate calling the lambda passed to doWithSingleContext
-            return executor.executeWithContext(mock(LdapContext.class));
-        });
+        // Then
+        assertEquals(2, result.size());
+        verify(ldapTemplate, times(1)).getContextSource(); // Verify that the ldapTemplate's context was used
+    }
 
-        // Simulate calling the search method inside the do-while loop
-        LdapOperations ldapOperations = mock(LdapOperations.class);
-        PagedResultsDirContextProcessor processor = mock(PagedResultsDirContextProcessor.class);
-        when(processor.hasMore()).thenReturn(true).thenReturn(false);  // Simulate paging behavior
+    @Test
+    void testGetAllADUsers_ExceptionHandling() throws Exception {
+        // Given
+        String searchFilter = "(memberOf=CN=groupName,dc=example,dc=com)";
+        int pageSize = 100;
 
-        when(ldapOperations.search(
-                eq(LdapUtils.emptyLdapName()), 
-                eq(searchFilter), 
-                any(SearchControls.class), 
-                any(PersonAttributesMapper.class), 
-                eq(processor)
-        )).thenReturn(mockUserList);
+        // Mocking the LdapTemplate behavior
+        when(ldapTemplate.getContextSource()).thenReturn(mock(SingleContextSource.class));
+        
+        // Simulate an exception during search
+        when(ldapTemplate.getContextSource().getOperations().search(
+            any(), eq(searchFilter), any(SearchControls.class), any(), eq(processor)
+        )).thenThrow(new RuntimeException("Test Exception"));
 
-        // Execute the service method
-        List<LDAPUserInfoDto> result = ldapGroupsService.getAllADUsers(searchFilter, pageSize);
+        // When
+        List<LDAPUserInfoDto> result = ldapGroupsServiceImpl.getAllADUsers(searchFilter, pageSize);
 
-        // Assertions
+        // Then
         assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("user1", result.get(0).getEmpId());
+        assertTrue(result.isEmpty()); // Expecting an empty result since an exception was thrown
+        verify(logger, times(1)).error(contains("Exception during Getting AD Users AD-GroupName"), any(Exception.class));
+    }
+
+    @Test
+    void testDoWhileLoop_EmptyResults() throws Exception {
+        // Given
+        String searchFilter = "(memberOf=CN=groupName,dc=example,dc=com)";
+        int pageSize = 100;
+        List<LDAPUserInfoDto> emptyList = Arrays.asList();
+
+        // Mocking the LdapTemplate behavior for empty results
+        when(ldapTemplate.getContextSource()).thenReturn(mock(SingleContextSource.class));
+        when(ldapTemplate.getContextSource().getOperations().search(
+            any(), eq(searchFilter), any(SearchControls.class), any(), eq(processor)
+        )).thenReturn(emptyList);
+
+        // When
+        List<LDAPUserInfoDto> result = ldapGroupsServiceImpl.getAllADUsers(searchFilter, pageSize);
+
+        // Then
+        assertTrue(result.isEmpty());
+        verify(ldapTemplate, times(1)).getContextSource();
     }
 }
