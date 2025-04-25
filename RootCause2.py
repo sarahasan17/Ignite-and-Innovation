@@ -4,7 +4,7 @@ void testGetAllADUsers_successful() throws ApplicationException {
     int pageSize = 2;
 
     LDAPUserInfoDto mockUser1 = new LDAPUserInfoDto();
-    mockUser1.setUserId("user1");
+    mockUser1.setEmpId("user1");
 
     List<LDAPUserInfoDto> mockUserList = List.of(mockUser1);
 
@@ -12,7 +12,7 @@ void testGetAllADUsers_successful() throws ApplicationException {
     when(ldapTemplate.getContextSource()).thenReturn(contextSource);
     when(contextSource.getReadOnlyContext()).thenReturn(mock(LdapContext.class));
 
-    // Use real processor behavior
+    // Mock the behavior of SingleContextSource (where doWithSingleContext() is invoked)
     try (MockedStatic<SingleContextSource> contextSourceMock = mockStatic(SingleContextSource.class)) {
 
         // Mock search result behavior
@@ -31,12 +31,15 @@ void testGetAllADUsers_successful() throws ApplicationException {
                 eq(processor)
         )).thenReturn(mockUserList);
 
+        // Mock doWithSingleContext to invoke the real method
         contextSourceMock.when(() -> SingleContextSource.doWithSingleContext(any(), any()))
                 .thenAnswer(invocation -> {
+                    // Ensure that the passed lambda is executed
                     @SuppressWarnings("unchecked")
                     org.springframework.ldap.core.ContextExecutor<LdapContext> executor =
                             (org.springframework.ldap.core.ContextExecutor<LdapContext>) invocation.getArgument(1);
-                    return executor.executeWithContext(mock(LdapContext.class)); // forces `do-while` to run
+                    // Simulate execution of the passed lambda method
+                    return executor.executeWithContext(mock(LdapContext.class)); 
                 });
 
         // Inject the processor using reflection if needed
@@ -49,24 +52,7 @@ void testGetAllADUsers_successful() throws ApplicationException {
             // Assert
             assertNotNull(result);
             assertEquals(1, result.size());
-            assertEquals("user1", result.get(0).getUserId());
+            assertEquals("user1", result.get(0).getEmpId());
         }
-    }
-}
-
-
-
-
-
-package com.wellsfargo.mortgage.servicing.slr.exception;
-
-public class ApplicationException extends Exception {
-
-    public ApplicationException(String message) {
-        super(message);
-    }
-
-    public ApplicationException(String message, Throwable cause) {
-        super(message, cause);
     }
 }
