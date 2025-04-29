@@ -1,3 +1,67 @@
+@ExtendWith(MockitoExtension.class)
+class ProxyAssignmentServiceImplTest {
+
+    @InjectMocks
+    private ProxyAssignmentServicelmpl proxyAssignmentService;
+
+    @Mock
+    private UsrProxyDao usrProxyDao;
+
+    @Mock
+    private LDAPService ldapService;
+
+    @Mock
+    private UserRoleReaderService userRoleReaderService;
+
+    @Mock
+    private AppFlwTypService aftService;
+
+    @Mock
+    private EntityManager entityManager;
+
+    @Test
+    void testActivateProxy_whenProxyAlreadyExists() {
+        // Mock static UserDetails
+        try (MockedStatic<UserDetails> utilities = mockStatic(UserDetails.class)) {
+            LDAPUserInfoDto proxyUser = new LDAPUserInfoDto();
+            proxyUser.setEmpld("proxyEmpId");
+            proxyUser.setAdEntId("proxyAdEntId");
+
+            LDAPUserInfoDto currentUser = new LDAPUserInfoDto();
+            currentUser.setEmpld("currentEmpId");
+            currentUser.setAdEntId("currentAdEntId");
+
+            utilities.when(() -> UserDetails.getUserByEmpld("proxy123")).thenReturn(proxyUser);
+            utilities.when(() -> UserDetails.getUserByEmpld("current456")).thenReturn(currentUser);
+
+            // Mock inside proxyExists
+            CriteriaBuilder cb = mock(CriteriaBuilder.class);
+            CriteriaQuery<UsrProxy> cq = mock(CriteriaQuery.class);
+            Root<UsrProxy> root = mock(Root.class);
+            TypedQuery<UsrProxy> query = mock(TypedQuery.class);
+
+            when(entityManager.getCriteriaBuilder()).thenReturn(cb);
+            when(cb.createQuery(UsrProxy.class)).thenReturn(cq);
+            when(cq.from(UsrProxy.class)).thenReturn(root);
+            when(entityManager.createQuery(cq)).thenReturn(query);
+
+            List<UsrProxy> proxyList = new ArrayList<>();
+            proxyList.add(new UsrProxy()); // proxy exists
+            when(query.getResultList()).thenReturn(proxyList);
+
+            // Act
+            ProxyAssignmentResult result = proxyAssignmentService.activateProxy("proxy123", 1L, "current456");
+
+            // Assert
+            assertEquals(Constants.FAIL, result.getResult());
+            assertEquals("This proxy already exists for this user.", result.getMessage());
+        }
+    }
+}
+
+
+
+
 package com.wellsfargo.mortgage.servicing.slr.service.impl;
 
 import static org.mockito.ArgumentMatchers.any;
